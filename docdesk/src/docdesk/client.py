@@ -57,7 +57,43 @@ def ask(question: str, document: str | None = None, max_tokens: int = 1024) -> s
 
     return extract_text(resp)
 
+def ask_stream(question: str, document: str | None = None, max_tokens: int = 2000):
+    """Stream Claude's answer chunk-by-chunk for interactive/user-facing use.
+
+    Yields text chunks as they arrive (realtime — for when someone is waiting).
+    Falls back on our E4 discipline: checks stop_reason and logs usage at the end.
+    """
+    user_content = (
+        f"<document>\n{document}\n</document>\n\n{question}"
+        if document is not None else question
+    )
+
+    with _client.messages.stream(
+        model=DEFAULT_MODEL,
+        max_tokens=max_tokens,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    ) as stream:
+        for text in stream.text_stream:      # content_block_delta text, assembled by SDK
+            yield text
+
+        final = stream.get_final_message()   # full message once streaming completes
+
+    logger.info(
+        "tokens in=%d out=%d stop_reason=%s",
+        final.usage.input_tokens, final.usage.output_tokens, final.stop_reason,
+    )
+    if final.stop_reason == "max_tokens":
+        # Note: chunks were already yielded; a real app should signal truncation to the UI.
+        logger.warning("Streamed response truncated at max_tokens=%d", max_tokens)
+
 
 if __name__ == "__main__":
     doc = "The refund window is 30 days from purchase."
-    print(ask("How long is the refund window?", document=doc))
+    for chunk in ask_stream("Summarize the refund policy.", document=doc):
+        print(chunk, end="", flush=True)
+    print()
+
+# if __name__ == "__main__":
+#     doc = "The refund window is 30 days from purchase."
+#     print(ask("How long is the refund window?", document=doc))
