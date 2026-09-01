@@ -2,7 +2,7 @@
 import logging
 from anthropic import Anthropic
 
-from .errors import is_retryable, FIX_IT
+from .errors import with_backoff, FIX_IT
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("docdesk")
@@ -31,19 +31,15 @@ def ask(question: str, document: str | None = None, max_tokens: int = 1024) -> s
         f"<document>\n{document}\n</document>\n\n{question}"
         if document is not None else question
     )
-    try:
-        resp = _client.messages.create(
+
+    def _call():
+        return _client.messages.create(
             model=DEFAULT_MODEL, max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
         )
-    except FIX_IT as e:
-        logger.error("Non-retryable request error (fix required): %s", e)
-        raise                                  # fail fast — don't loop
-    except anthropic.APIError as e:
-        if is_retryable(e):
-            logger.warning("Transient error (will retry in E8): %s", e)
-        raise                                  # E8 replaces this with a backoff retry
+
+    resp = with_backoff(_call)   # retries transient errors; fix-it errors fail fast
 
     logger.info("tokens in=%d out=%d stop_reason=%s",
                 resp.usage.input_tokens, resp.usage.output_tokens, resp.stop_reason)
@@ -86,12 +82,12 @@ def ask_stream(question: str, document: str | None = None, max_tokens: int = 200
         logger.warning("Streamed response truncated at max_tokens=%d", max_tokens)
 
 
-if __name__ == "__main__":
-    doc = "The refund window is 30 days from purchase."
-    for chunk in ask_stream("Summarize the refund policy.", document=doc):
-        print(chunk, end="", flush=True)
-    print()
-
 # if __name__ == "__main__":
 #     doc = "The refund window is 30 days from purchase."
-#     print(ask("How long is the refund window?", document=doc))
+#     for chunk in ask_stream("Summarize the refund policy.", document=doc):
+#         print(chunk, end="", flush=True)
+#     print()
+
+if __name__ == "__main__":
+    doc = "The refund window is 30 days from purchase."
+    print(ask("How long is the refund window?", document=doc))
