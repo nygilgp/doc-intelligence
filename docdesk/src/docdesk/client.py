@@ -2,6 +2,8 @@
 import logging
 from anthropic import Anthropic
 
+from .errors import is_retryable, FIX_IT
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("docdesk")
 
@@ -24,37 +26,29 @@ def extract_text(response) -> str:
 class TruncatedResponseError(Exception):
     """Raised when a response was cut off by max_tokens."""
 
-
 def ask(question: str, document: str | None = None, max_tokens: int = 1024) -> str:
-    """Ask Claude a question, optionally grounded in an (untrusted) document.
-
-    Detects truncation via stop_reason and logs token usage for cost tracking.
-    """
     user_content = (
         f"<document>\n{document}\n</document>\n\n{question}"
         if document is not None else question
     )
-
-    resp = _client.messages.create(
-        model=DEFAULT_MODEL,
-        max_tokens=max_tokens,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
-    )
-
-    # Token tracking — feeds S2 cost modeling.
-    logger.info(
-        "tokens in=%d out=%d stop_reason=%s",
-        resp.usage.input_tokens, resp.usage.output_tokens, resp.stop_reason,
-    )
-
-    # Truncation detection — never return a silent half-answer.
-    if resp.stop_reason == "max_tokens":
-        raise TruncatedResponseError(
-            f"Response truncated at max_tokens={max_tokens}. "
-            "Increase max_tokens or continue generation."
+    try:
+        resp = _client.messages.create(
+            model=DEFAULT_MODEL, max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_content}],
         )
+    except FIX_IT as e:
+        logger.error("Non-retryable request error (fix required): %s", e)
+        raise                                  # fail fast — don't loop
+    except anthropic.APIError as e:
+        if is_retryable(e):
+            logger.warning("Transient error (will retry in E8): %s", e)
+        raise                                  # E8 replaces this with a backoff retry
 
+    logger.info("tokens in=%d out=%d stop_reason=%s",
+                resp.usage.input_tokens, resp.usage.output_tokens, resp.stop_reason)
+    if resp.stop_reason == "max_tokens":
+        raise TruncatedResponseError(f"Response truncated at max_tokens={max_tokens}.")
     return extract_text(resp)
 
 def ask_stream(question: str, document: str | None = None, max_tokens: int = 2000):
