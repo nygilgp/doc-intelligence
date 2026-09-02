@@ -114,6 +114,45 @@ def ask_image(
         raise TruncatedResponseError(f"Response truncated at max_tokens={max_tokens}.")
     return extract_text(resp)
 
+def ask_document(
+    pdf_bytes: bytes,
+    question: str,
+    max_tokens: int = 1024,
+) -> str:
+    """Ask Claude about an uploaded PDF via native document input.
+
+    Preserves the PDF's text AND layout (tables, columns, figures). The PDF is
+    UNTRUSTED input, isolated in a user turn; trusted rules stay in SYSTEM_PROMPT.
+    Reuses backoff retry + truncation + usage discipline.
+    """
+    b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+    def _call():
+        return _client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,                        # trusted channel
+            messages=[{"role": "user", "content": [       # untrusted, isolated
+                {"type": "document", "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": b64,
+                }},
+                {"type": "text", "text": question},
+            ]}],
+        )
+
+    resp = with_backoff(_call)   # E8 retry discipline
+    logger.info("tokens in=%d out=%d stop_reason=%s",
+                resp.usage.input_tokens, resp.usage.output_tokens, resp.stop_reason)
+    if resp.stop_reason == "max_tokens":
+        raise TruncatedResponseError(f"Response truncated at max_tokens={max_tokens}.")
+    return extract_text(resp)
+
+
+# if __name__ == "__main__":
+#     with open("contract.pdf", "rb") as f:
+#         print(ask_document(f.read(), "What's the termination notice period?"))
 
 # if __name__ == "__main__":
 #     with open("invoice.jpg", "rb") as f:
