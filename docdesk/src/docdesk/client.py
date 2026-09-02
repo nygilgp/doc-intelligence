@@ -1,6 +1,7 @@
 """Core Claude client for the Document Intelligence & Support Application."""
 import logging
 from anthropic import Anthropic
+import base64
 
 from .errors import with_backoff, FIX_IT
 
@@ -81,6 +82,42 @@ def ask_stream(question: str, document: str | None = None, max_tokens: int = 200
     if final.stop_reason == "max_tokens":
         logger.warning("Streamed response truncated at max_tokens=%d", max_tokens)
 
+def ask_image(
+    image_bytes: bytes,
+    question: str,
+    media_type: str = "image/jpeg",
+    max_tokens: int = 1024,
+) -> str:
+    """Ask Claude about an uploaded image (scan, photo, diagram) via vision.
+
+    The image is UNTRUSTED input, isolated in a user turn. Trusted rules stay in
+    SYSTEM_PROMPT. Reuses backoff retry + truncation + usage discipline.
+    """
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+
+    def _call():
+        return _client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=max_tokens,
+            system=SYSTEM_PROMPT,                       # trusted channel
+            messages=[{"role": "user", "content": [      # untrusted, isolated
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": question},
+            ]}],
+        )
+
+    resp = with_backoff(_call)   # E8 retry discipline
+    logger.info("tokens in=%d out=%d stop_reason=%s",
+                resp.usage.input_tokens, resp.usage.output_tokens, resp.stop_reason)
+    if resp.stop_reason == "max_tokens":
+        raise TruncatedResponseError(f"Response truncated at max_tokens={max_tokens}.")
+    return extract_text(resp)
+
+
+# if __name__ == "__main__":
+#     with open("invoice.jpg", "rb") as f:
+#         print(ask_image(f.read(), "What's the total due on this invoice?"))
 
 # if __name__ == "__main__":
 #     doc = "The refund window is 30 days from purchase."
