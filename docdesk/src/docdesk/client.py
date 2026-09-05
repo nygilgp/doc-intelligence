@@ -1,6 +1,8 @@
 """Core Claude client for the Document Intelligence & Support Application."""
+import os
 import logging
-from anthropic import Anthropic
+"""Core Claude client — vendor-flexible (direct Anthropic or Amazon Bedrock)."""
+from anthropic import Anthropic, AnthropicBedrock
 import base64
 
 from .errors import with_backoff, FIX_IT
@@ -8,8 +10,30 @@ from .errors import with_backoff, FIX_IT
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("docdesk")
 
-_client = Anthropic()
-DEFAULT_MODEL = "claude-sonnet-4-5"
+
+# Config toggle: "anthropic" (direct) or "bedrock" (via AWS).
+VENDOR = os.environ.get("DOCDESK_VENDOR", "anthropic")
+
+# Model ID differs by vendor; the rest of the call body does NOT.
+MODEL_IDS = {
+    "anthropic": "claude-sonnet-4-5",
+    "bedrock":   "anthropic.claude-sonnet-4-5-20250101-v1:0",
+}
+
+
+def _make_client():
+    """Return the appropriate client. Only auth/client type differs by vendor."""
+    if VENDOR == "bedrock":
+        # Uses AWS IAM credentials (env/role), not an Anthropic API key.
+        return AnthropicBedrock(aws_region=os.environ.get("AWS_REGION", "us-east-1"))
+    return Anthropic()  # reads ANTHROPIC_API_KEY
+
+
+_client = _make_client()
+DEFAULT_MODEL = MODEL_IDS[VENDOR]
+# SYSTEM_PROMPT, extract_text(), ask(), ask_stream(), ask_image(), ask_document()
+# all remain UNCHANGED — they call _client.messages.create(model=DEFAULT_MODEL, ...)
+# and the Messages API surface is identical across vendors.
 
 SYSTEM_PROMPT = (
     "You are a concise document-support assistant. "
