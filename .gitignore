@@ -1,6 +1,13 @@
+# Secrets — never commit (S6 will move these to Secrets Manager)
 .env
+*.key
 .DS_Store
-.venv
 
+# Python
+.venv/
 __pycache__/
 .pytest_cache/
+*.pyc
+
+# Local artifacts
+*.log
