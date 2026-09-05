@@ -118,41 +118,49 @@ def ask_document(
     pdf_bytes: bytes,
     question: str,
     max_tokens: int = 1024,
+    thinking_budget: int | None = None,   # None = thinking off (simple tasks)
 ) -> str:
-    """Ask Claude about an uploaded PDF via native document input.
+    """Ask Claude about a PDF, optionally with an extended-thinking budget.
 
-    Preserves the PDF's text AND layout (tables, columns, figures). The PDF is
-    UNTRUSTED input, isolated in a user turn; trusted rules stay in SYSTEM_PROMPT.
-    Reuses backoff retry + truncation + usage discipline.
+    For hard, multi-step questions, pass thinking_budget (< max_tokens). max_tokens
+    must hold BOTH the thinking pass and the final answer.
     """
     b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
 
-    def _call():
-        return _client.messages.create(
-            model=DEFAULT_MODEL,
-            max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,                        # trusted channel
-            messages=[{"role": "user", "content": [       # untrusted, isolated
-                {"type": "document", "source": {
-                    "type": "base64",
-                    "media_type": "application/pdf",
-                    "data": b64,
-                }},
-                {"type": "text", "text": question},
-            ]}],
-        )
+    kwargs = dict(
+        model=DEFAULT_MODEL,
+        max_tokens=max_tokens,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": [
+            {"type": "document", "source": {
+                "type": "base64", "media_type": "application/pdf", "data": b64}},
+            {"type": "text", "text": question},
+        ]}],
+    )
+    if thinking_budget is not None:
+        if thinking_budget >= max_tokens:
+            raise ValueError(
+                f"thinking_budget ({thinking_budget}) must be < max_tokens "
+                f"({max_tokens}) to leave room for the answer."
+            )
+        kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
 
-    resp = with_backoff(_call)   # E8 retry discipline
+    resp = with_backoff(lambda: _client.messages.create(**kwargs))
     logger.info("tokens in=%d out=%d stop_reason=%s",
                 resp.usage.input_tokens, resp.usage.output_tokens, resp.stop_reason)
     if resp.stop_reason == "max_tokens":
-        raise TruncatedResponseError(f"Response truncated at max_tokens={max_tokens}.")
-    return extract_text(resp)
+        raise TruncatedResponseError(
+            f"Truncated at max_tokens={max_tokens}. If thinking is on, raise max_tokens."
+        )
+    return extract_text(resp)   # ignores the thinking block, returns the answer
 
 
 # if __name__ == "__main__":
 #     with open("contract.pdf", "rb") as f:
-#         print(ask_document(f.read(), "What's the termination notice period?"))
+#         pdf = f.read()
+#     # Hard question → thinking on, generous max_tokens.
+#     print(ask_document(pdf, "Compute the last valid cancellation date given the clauses.",
+#                        max_tokens=12000, thinking_budget=8000))
 
 # if __name__ == "__main__":
 #     with open("invoice.jpg", "rb") as f:
