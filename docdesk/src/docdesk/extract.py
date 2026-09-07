@@ -3,6 +3,18 @@
 Requests a defined JSON schema so downstream code gets a predictable shape.
 (Validation / defensive parsing is deepened in S4 Output Handling.)
 """
+# docdesk/extract.py
+#
+# NOTE ON DETERMINISM (see docs/decisions/ for ADR context):
+# Claude generates output via next-token probabilistic prediction. This means
+# free-text fields (summaries, explanations) may vary slightly between identical
+# calls — that's expected, not a bug. This module exists specifically to pull
+# fixed, structured fields (dates, IDs, amounts) OUT of free text and into a
+# validated schema, precisely because we cannot and should not rely on prose
+# stability for anything downstream systems depend on exactly matching.
+#
+# Full non-determinism controls (and their limits) are covered in S2 E5.
+
 import json
 from .client import _client, DEFAULT_MODEL, SYSTEM_PROMPT, extract_text, build_user_content
 
