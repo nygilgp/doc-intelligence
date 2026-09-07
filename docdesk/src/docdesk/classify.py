@@ -20,6 +20,7 @@
 # Season 0 meta-skill already pointed toward.
 
 import anthropic
+from docdesk.response_utils import get_text_block
 
 client = anthropic.Anthropic()
 
@@ -40,7 +41,7 @@ def classify_ticket(ticket_text: str) -> str:
         ),
         messages=[{"role": "user", "content": ticket_text}],
     )
-    category = response.content[0].text.strip().lower()
+    category = get_text_block(response).strip().lower()
 
     # Defensive parsing (S4/S8 territory) -- never trust raw output blindly,
     # this matters even more now that we can't lean on temperature at all.
