@@ -22,13 +22,15 @@
 import anthropic
 from docdesk.response_utils import get_text_block
 
+from docdesk.model_config import get_model_for_task
+
 client = anthropic.Anthropic()
 
 CATEGORIES = ["billing", "technical", "account", "legal", "other"]
 
 def classify_ticket(ticket_text: str) -> str:
     response = client.messages.create(
-        model="claude-sonnet-4-5",
+        model=get_model_for_task("classify_ticket"),
         max_tokens=10,
         # NOTE: no `temperature` parameter sent. On Claude 4.7+ models this
         # would 400 if set to a non-default value. We rely entirely on strict
