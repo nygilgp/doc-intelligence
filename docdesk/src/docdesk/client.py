@@ -44,6 +44,18 @@ SYSTEM_PROMPT = (
 )
 
 
+# client.py (note) — enable server-side compaction for long-running reviews.
+# Requires the beta header and the compaction strategy in context_management.
+# resp = raw_client.messages.create(
+#     model="claude-opus-5",
+#     max_tokens=4096,
+#     messages=messages,
+#     extra_headers={"anthropic-beta": "compact-2026-01-12"},
+#     extra_body={"context_management": {"edits": [{"type": "compact_20260112"}]}},
+# )
+# The API summarizes older context near the limit and drops pre-summary blocks.
+
+
 def extract_text(response) -> str:
     return "".join(b.text for b in response.content if b.type == "text")
 
