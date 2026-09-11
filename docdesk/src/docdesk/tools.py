@@ -56,6 +56,15 @@ TICKET_TOOL = {
 
 TOOLS = [WAREHOUSE_TOOL, TICKET_TOOL]
 
+# docdesk/tools.py  — add near the top
+SENSITIVE_TOOLS = {"archive_shipment_logs", "delete_customer"}
+
+def human_approves(name: str, tool_input: dict) -> bool:
+    """Stub approval gate. In production: prompt a human via UI/Slack/email.
+    Returns True only on explicit approval."""
+    print(f"[APPROVAL NEEDED] {name}({tool_input}) — approve? [y/N]")
+    return input().strip().lower() == "y"
+
 # --- Implementations ---
 def get_warehouse_value(warehouse_id: str) -> str:
     fake_db = {"A": 125_400.00, "B": 98_250.50, "C": 210_000.00}
