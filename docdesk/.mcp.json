@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "docdesk-inventory": {
+      "command": "python",
+      "args": [
+        "-m",
+        "docdesk_mcp.server"
+      ]
+    }
+  }
+}
